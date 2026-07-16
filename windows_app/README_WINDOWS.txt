@@ -1,4 +1,10 @@
-DOCX/HTML Compare App
+ER Proof Tool for Windows
+
+Recommended download package:
+- ER_prooftool_windows_app.zip
+  This is the Windows-safe bundle to download and extract.
+- windows_app.zip
+  Legacy duplicate bundle kept for compatibility.
 
 Files needed to copy to another Windows machine:
 - compare_ui_server.py
@@ -42,9 +48,9 @@ What the dependencies are for:
 - pypdf
   Adds PDF comment annotations for the detected differences.
 - PyMuPDF
-  Extracts positioned text blocks and word locations from existing PDF files for DOCX-vs-PDF compare mode.
+  Used by the compare engine for PDF annotation and extraction support in the local pipeline.
 - Tesseract OCR
-  Reads PDF files that do not expose a searchable text layer. This is required for the sample 8-K PDF workflow.
+  Installed by setup when available for local OCR-related workflows.
 - Python standard library modules are used for everything else.
 
 Runtime output:

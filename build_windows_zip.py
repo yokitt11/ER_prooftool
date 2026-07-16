@@ -11,6 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 WINDOWS_APP_DIR = ROOT / "windows_app"
+WINDOWS_DOWNLOAD_ZIP = ROOT / "ER_prooftool_windows_app.zip"
 WINDOWS_ZIP = ROOT / "windows_app.zip"
 
 WINDOWS_APP_FILES = [
@@ -59,7 +60,7 @@ def patch_zip_for_windows(zip_path: Path) -> None:
     zip_path.write_bytes(data)
 
 
-def build_windows_zip(zip_path: Path = WINDOWS_ZIP) -> None:
+def build_windows_zip(zip_path: Path) -> None:
     missing = [rel for rel in WINDOWS_APP_FILES if not (WINDOWS_APP_DIR / rel).exists()]
     if missing:
         raise FileNotFoundError(f"Missing Windows app files: {missing}")
@@ -75,7 +76,7 @@ def build_windows_zip(zip_path: Path = WINDOWS_ZIP) -> None:
     patch_zip_for_windows(zip_path)
 
 
-def validate_windows_zip(zip_path: Path = WINDOWS_ZIP) -> None:
+def validate_windows_zip(zip_path: Path) -> None:
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
         if any("__pycache__" in name for name in names):
@@ -97,17 +98,30 @@ def validate_windows_zip(zip_path: Path = WINDOWS_ZIP) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build a Windows-friendly ZIP bundle for the compare app.")
-    parser.add_argument("--output", type=Path, default=WINDOWS_ZIP, help="Path to the output zip file.")
+    parser.add_argument(
+        "--output",
+        type=Path,
+        default=WINDOWS_DOWNLOAD_ZIP,
+        help="Path to the primary output zip file.",
+    )
     parser.add_argument("--skip-validate", action="store_true", help="Skip post-build validation.")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    build_windows_zip(args.output)
+    primary_output = args.output
+    build_windows_zip(primary_output)
     if not args.skip_validate:
-        validate_windows_zip(args.output)
-    print(f"Built Windows ZIP: {args.output}")
+        validate_windows_zip(primary_output)
+
+    if primary_output.resolve() != WINDOWS_ZIP.resolve():
+        shutil.copyfile(primary_output, WINDOWS_ZIP)
+        if not args.skip_validate:
+            validate_windows_zip(WINDOWS_ZIP)
+        print(f"Built Windows ZIPs: {primary_output} and {WINDOWS_ZIP}")
+    else:
+        print(f"Built Windows ZIP: {primary_output}")
     return 0
 
 
