@@ -338,6 +338,39 @@
       white-space: pre-wrap;
     }
 
+    .launch-notice {
+      display: none;
+      margin-bottom: 16px;
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(162, 75, 42, 0.1);
+      border: 1px solid rgba(110, 44, 22, 0.18);
+    }
+
+    .launch-notice.active {
+      display: block;
+    }
+
+    .launch-notice strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 14px;
+      color: var(--accent-deep);
+    }
+
+    .launch-notice span {
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
+    .launch-actions {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
     .results {
       padding: 24px;
       min-height: 760px;
@@ -485,6 +518,14 @@
       <section class="card controls">
         <h2 class="panel-title">Inputs</h2>
         <p class="panel-sub" id="panelSub">Use one Word `.docx` file and one saved webpage `.html` or `.htm` file. The compare job runs locally on this machine.</p>
+        <div class="launch-notice" id="launchNotice">
+          <strong>Local app launch required</strong>
+          <span id="launchNoticeCopy">This page was opened directly from disk. Start the local compare app first, then use the app page at <code>http://127.0.0.1:8765/</code>.</span>
+          <div class="launch-actions">
+            <a class="button-link primary" id="openLocalAppLink" href="http://127.0.0.1:8765/" target="_blank" rel="noreferrer">Open Local App</a>
+            <button class="secondary" id="retryLaunchBtn" type="button">Retry Connection</button>
+          </div>
+        </div>
 
         <div class="drop-grid">
           <label class="dropzone" id="docxZone">
@@ -590,6 +631,8 @@
       targetFile: null,
       proofread: true,
       running: false,
+      fileMode: window.location.protocol === 'file:',
+      serverReachable: window.location.protocol !== 'file:',
     };
 
     const els = {
@@ -615,6 +658,10 @@
       compareBtn: document.getElementById('compareBtn'),
       resetBtn: document.getElementById('resetBtn'),
       statusBox: document.getElementById('statusBox'),
+      launchNotice: document.getElementById('launchNotice'),
+      launchNoticeCopy: document.getElementById('launchNoticeCopy'),
+      openLocalAppLink: document.getElementById('openLocalAppLink'),
+      retryLaunchBtn: document.getElementById('retryLaunchBtn'),
       resultsEmpty: document.getElementById('resultsEmpty'),
       resultsBody: document.getElementById('resultsBody'),
       downloadPdf: document.getElementById('downloadPdf'),
@@ -652,8 +699,23 @@
       els.statusBox.textContent = message;
     }
 
+    function compareBaseUrl() {
+      return state.fileMode ? 'http://127.0.0.1:8765' : window.location.origin;
+    }
+
+    function setLaunchNotice(active, message) {
+      if (!els.launchNotice) return;
+      els.launchNotice.classList.toggle('active', active);
+      if (message) {
+        els.launchNoticeCopy.textContent = message;
+      }
+    }
+
     function updateButtons() {
-      els.compareBtn.disabled = state.running || !(state.docxFile && state.targetFile);
+      els.compareBtn.disabled =
+        state.running ||
+        !(state.docxFile && state.targetFile) ||
+        (state.fileMode && !state.serverReachable);
     }
 
     function updateFileCard(kind, file) {
@@ -726,16 +788,11 @@
     }
 
     function compareApiUrl() {
-      if (window.location.protocol === 'file:') {
-        return 'http://127.0.0.1:8765/api/compare';
-      }
-      return `${window.location.origin}/api/compare`;
+      return `${compareBaseUrl()}/api/compare`;
     }
 
     async function ensureServerReachable() {
-      const healthUrl = window.location.protocol === 'file:'
-        ? 'http://127.0.0.1:8765/api/health'
-        : `${window.location.origin}/api/health`;
+      const healthUrl = `${compareBaseUrl()}/api/health`;
       try {
         const response = await fetch(healthUrl, { cache: 'no-store' });
         if (!response.ok) {
@@ -745,6 +802,30 @@
         throw new Error(
           'The local compare server is not reachable. Open http://127.0.0.1:8765 in your browser, or start the app with the launcher script first.'
         );
+      }
+    }
+
+    async function handleFileModeLaunch() {
+      if (!state.fileMode) {
+        return;
+      }
+
+      setStatus('Checking for the local compare app on http://127.0.0.1:8765 ...');
+      try {
+        await ensureServerReachable();
+        state.serverReachable = true;
+        updateButtons();
+        setLaunchNotice(false);
+        setStatus('Local compare app found. Redirecting to http://127.0.0.1:8765/ ...');
+        window.location.replace('http://127.0.0.1:8765/');
+      } catch (_error) {
+        state.serverReachable = false;
+        updateButtons();
+        setLaunchNotice(
+          true,
+          'This page was opened directly from disk. Start the app with "Start DOCX Compare App.bat", then use the app page at http://127.0.0.1:8765/.'
+        );
+        setStatus('Local compare app not detected. Start the launcher first, then click "Open Local App" or "Retry Connection".');
       }
     }
 
@@ -852,10 +933,9 @@
     });
     els.compareBtn.addEventListener('click', runCompare);
     els.resetBtn.addEventListener('click', resetAll);
+    els.retryLaunchBtn.addEventListener('click', handleFileModeLaunch);
     applyHtmlMode();
-    if (window.location.protocol === 'file:') {
-      setStatus('This page was opened directly from disk. Use http://127.0.0.1:8765 or the launcher app so the compare server is available.');
-    }
+    handleFileModeLaunch();
   </script>
 </body>
 </html>

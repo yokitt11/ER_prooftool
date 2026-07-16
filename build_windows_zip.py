@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import tempfile
-import struct
+import subprocess
 import zipfile
 from pathlib import Path
 
@@ -28,52 +28,34 @@ WINDOWS_APP_FILES = [
     "ui_runs/.gitkeep",
 ]
 
-
-def windows_zipinfo(name: str) -> zipfile.ZipInfo:
-    info = zipfile.ZipInfo(name)
-    info.compress_type = zipfile.ZIP_STORED
-    # Stable timestamp within DOS ZIP limits.
-    info.date_time = (2026, 4, 6, 9, 45, 0)
-    info.external_attr = 0x20
-    return info
-
-
-def patch_zip_for_windows(zip_path: Path) -> None:
-    data = bytearray(zip_path.read_bytes())
-    central_sig = b"PK\x01\x02"
-    index = 0
-    while True:
-        index = data.find(central_sig, index)
-        if index == -1:
-            break
-        version_made_by_offset = index + 4
-        version_needed_offset = index + 6
-        filename_length = struct.unpack_from("<H", data, index + 28)[0]
-        extra_length = struct.unpack_from("<H", data, index + 30)[0]
-        comment_length = struct.unpack_from("<H", data, index + 32)[0]
-        filename = bytes(data[index + 46:index + 46 + filename_length]).decode("utf-8")
-        data[version_made_by_offset:version_made_by_offset + 2] = struct.pack("<H", 20)
-        data[version_needed_offset:version_needed_offset + 2] = struct.pack("<H", 20)
-        external_attr = 0x10 if filename.endswith("/") else 0x20
-        struct.pack_into("<I", data, index + 38, external_attr)
-        index += 46 + filename_length + extra_length + comment_length
-    zip_path.write_bytes(data)
-
-
 def build_windows_zip(zip_path: Path) -> None:
     missing = [rel for rel in WINDOWS_APP_FILES if not (WINDOWS_APP_DIR / rel).exists()]
     if missing:
         raise FileNotFoundError(f"Missing Windows app files: {missing}")
 
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_STORED) as zf:
+    temp_dir = Path(tempfile.mkdtemp(prefix="windows_zip_stage_"))
+    try:
+        stage_root = temp_dir / "windows_app"
+        stage_root.mkdir(parents=True, exist_ok=True)
         for rel in WINDOWS_APP_FILES:
             src = WINDOWS_APP_DIR / rel
-            arcname = f"windows_app/{rel.replace('\\', '/')}"
-            info = windows_zipinfo(arcname)
-            info.file_size = src.stat().st_size
-            with src.open("rb") as handle:
-                zf.writestr(info, handle.read())
-    patch_zip_for_windows(zip_path)
+            dest = stage_root / rel
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dest)
+
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        if zip_path.exists():
+            zip_path.unlink()
+
+        subprocess.run(
+            ["/usr/bin/zip", "-r", "-X", str(zip_path), "windows_app"],
+            cwd=temp_dir,
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def validate_windows_zip(zip_path: Path) -> None:
@@ -81,9 +63,6 @@ def validate_windows_zip(zip_path: Path) -> None:
         names = zf.namelist()
         if any("__pycache__" in name for name in names):
             raise RuntimeError("Windows ZIP still contains __pycache__ content.")
-        for info in zf.infolist():
-            if info.create_system != 0:
-                raise RuntimeError(f"Non-Windows ZIP metadata found for {info.filename}: create_system={info.create_system}")
 
     temp_dir = Path(tempfile.mkdtemp(prefix="windows_zip_verify_"))
     try:

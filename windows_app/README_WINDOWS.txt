@@ -41,6 +41,11 @@ Windows setup:
    then rerun setup in a new Command Prompt.
 4. Start the app:
    Start DOCX Compare App.bat
+5. Do not open:
+   compare_ui.html
+   directly from the extracted folder. That file is only the page asset. The working app is served from:
+   http://127.0.0.1:8765/
+   after the launcher starts the local server.
 
 What the dependencies are for:
 - playwright
